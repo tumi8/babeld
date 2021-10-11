@@ -947,6 +947,7 @@ int
 kernel_route(int operation, int table,
              const unsigned char *dest, unsigned short plen,
              const unsigned char *src, unsigned short src_plen,
+             const unsigned char *tos,
              const unsigned char *pref_src,
              const unsigned char *gate, int ifindex, unsigned int metric,
              const unsigned char *newgate, int newifindex,
@@ -956,7 +957,7 @@ kernel_route(int operation, int table,
     struct rtmsg *rtm;
     struct rtattr *rta;
     int len = sizeof(buf.raw);
-    int rc, ipv4, use_src = 0;
+    int rc, ipv4, use_src, use_tos = 0;
 
     if(!nl_setup) {
         fprintf(stderr,"kernel_route: netlink not initialized.\n");
@@ -1001,11 +1002,11 @@ kernel_route(int operation, int table,
            stick with the naive approach, and hope that the window is
            small enough to be negligible. */
         kernel_route(ROUTE_FLUSH, table, dest, plen,
-                     src, src_plen, pref_src,
+                     src, src_plen, tos, pref_src,
                      gate, ifindex, metric,
                      NULL, 0, 0, 0);
         rc = kernel_route(ROUTE_ADD, newtable, dest, plen,
-                          src, src_plen, pref_src,
+                          src, src_plen, tos, pref_src,
                           newgate, newifindex, newmetric,
                           NULL, 0, 0, 0);
         if(rc < 0) {
@@ -1020,6 +1021,8 @@ kernel_route(int operation, int table,
 
     ipv4 = v4mapped(gate);
     use_src = !is_default(src, src_plen);
+    use_tos = !is_default_tos(tos);
+
     if(use_src) {
         if(ipv4 || !has_ipv6_subtrees) {
             errno = ENOSYS;
@@ -1028,11 +1031,11 @@ kernel_route(int operation, int table,
     }
 
     kdebugf("kernel_route: %s %s from %s "
-            "table %d metric %d dev %d nexthop %s\n",
+            "table %d metric %d dev %d nexthop %s TOS %s\n",
             operation == ROUTE_ADD ? "add" :
             operation == ROUTE_FLUSH ? "flush" : "???",
             format_prefix(dest, plen), format_prefix(src, src_plen),
-            table, metric, ifindex, format_address(gate));
+            table, metric, ifindex, format_address(gate), format_tos_value(tos));
 
     /* Unreachable default routes cause all sort of weird interactions;
        ignore them. */
@@ -1053,6 +1056,9 @@ kernel_route(int operation, int table,
     rtm->rtm_dst_len = ipv4 ? plen - 96 : plen;
     if(use_src)
         rtm->rtm_src_len = src_plen;
+    if(use_tos) {
+        rtm->rtm_tos = tos[0];
+    }
     rtm->rtm_table = table;
     rtm->rtm_scope = RT_SCOPE_UNIVERSE;
     if(metric < KERNEL_INFINITY) {
@@ -1141,6 +1147,7 @@ parse_kernel_route_rta(struct rtmsg *rtm, int len, struct kernel_route *route)
     route->proto = rtm->rtm_protocol;
 
     is_v4 = rtm->rtm_family == AF_INET;
+    route->tos[0] = rtm->rtm_tos; //Get the Information about TOS
 
     while(RTA_OK(rta, len)) {
         switch(rta->rta_type) {
@@ -1203,18 +1210,20 @@ print_kernel_route(int add, int protocol, int type,
             return;
         }
 
-        kdebugf("%s kernel route: dest: %s/%d gw: %s metric: %d if: %s "
+        kdebugf("%s kernel route: dest: %s/%d gw: %s metric: %d if: %s ToS: %s"
                 "(proto: %d, type: %d, from: %s/%d)",
                 add == RTM_NEWROUTE ? "Add" : "Delete",
                 addr_prefix, route->plen, addr_gw, route->metric, ifname,
+                route->tos,
                 protocol, type, src_addr_prefix, route->src_plen);
         return;
     }
 
-    kdebugf("%s kernel route: dest: %s/%d gw: %s metric: %d if: %s "
+    kdebugf("%s kernel route: dest: %s/%d gw: %s metric: %d if: %s  ToS: %s"
             "(proto: %d, type: %d)",
             add == RTM_NEWROUTE ? "Add" : "Delete",
             addr_prefix, route->plen, addr_gw, route->metric, ifname,
+            route->tos,
             protocol, type);
 }
 
@@ -1476,7 +1485,12 @@ filter_netlink(struct nlmsghdr *nh, struct kernel_filter *filter)
         if(!filter->addr) break;
         rc = filter_addresses(nh, &u.addr);
         if(rc <= 0) break;
-        return filter->addr(&u.addr, filter->addr_closure);
+
+        for(int i = 0; i < dscp_values_len; i++) {
+            int res = filter->addr(&u.addr, filter->addr_closure, dscp_values + i);
+            if(res != 1) return res;
+        }
+        return 1;
     default:
         kdebugf("filter_netlink: unexpected message type %d\n",
                 nh->nlmsg_type);

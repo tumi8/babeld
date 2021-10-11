@@ -28,6 +28,7 @@ struct source {
     unsigned char plen;
     unsigned char src_prefix[16];
     unsigned char src_plen;
+    unsigned char tos[1]; // Storing the additional index-partner for QoS-based routing
     unsigned short seqno;
     unsigned short metric;
     unsigned short route_count;
@@ -39,6 +40,7 @@ struct source *find_source(const unsigned char *id,
                            unsigned char plen,
                            const unsigned char *src_prefix,
                            unsigned char src_plen,
+                           const unsigned char *tos,
                            int create, unsigned short seqno);
 struct source *retain_source(struct source *src);
 void release_source(struct source *src);

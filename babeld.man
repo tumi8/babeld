@@ -459,11 +459,6 @@ i.e. when the RTT is higher or equal than
 .BR rtt\-max .
 The default is
 .BR 96
-if the interface is of type
-.B tunnel,
-and
-.BR 0
-otherwise.
 .TP
 .BI key " id"
 Enable HMAC security on this interface, and use the key
@@ -537,6 +532,9 @@ link-local address
 This entry only applies to routes originated by a router with router-id
 .IR id .
 .TP
+.BI tos-value "Type of Service Value in hex-format"
+This entry only applies to routes with the corrsponding value in the ToS-field
+.TP
 .BI proto " p"
 This entry only applies to kernel routes with kernel protocol number
 .IR p .
@@ -576,6 +574,11 @@ For a redistribute filter, redistribute this route with metric
 .BI src-prefix " prefix"
 For a redistribute filter, set the source prefix of this route to
 .IR prefix .
+.BI tos "Type of Service number"
+For a redistribute filter, set the ToS value setting of this route to
+.IR tos  .
+in hexformat for ToS-values.
+.TP
 .TP
 .BI table " table"
 In an

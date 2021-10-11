@@ -35,6 +35,7 @@ struct resend {
     unsigned char plen;
     unsigned char src_prefix[16];
     unsigned char src_plen;
+    unsigned char tos[1]; //Adding DSCP-based routing for policies
     unsigned short seqno;
     unsigned char id[8];
     struct interface *ifp;
@@ -45,21 +46,26 @@ extern struct timeval resend_time;
 
 struct resend *find_request(const unsigned char *prefix, unsigned char plen,
                     const unsigned char *src_prefix, unsigned char src_plen,
+                    const unsigned char *tos,
                     struct resend **previous_return);
 void flush_resends(struct neighbour *neigh);
 int record_resend(int kind, const unsigned char *prefix, unsigned char plen,
                   const unsigned char *src_prefix, unsigned char src_plen,
+                  const unsigned char *tos,
                   unsigned short seqno, const unsigned char *id,
                   struct interface *ifp, int delay);
 int unsatisfied_request(const unsigned char *prefix, unsigned char plen,
                         const unsigned char *src_prefix, unsigned char src_plen,
+                        const unsigned char *tos,
                         unsigned short seqno, const unsigned char *id);
 int request_redundant(struct interface *ifp,
                       const unsigned char *prefix, unsigned char plen,
                       const unsigned char *src_prefix, unsigned char src_plen,
+                      const unsigned char *tos,
                       unsigned short seqno, const unsigned char *id);
 int satisfy_request(const unsigned char *prefix, unsigned char plen,
                     const unsigned char *src_prefix, unsigned char src_plen,
+                    const unsigned char *tos,
                     unsigned short seqno, const unsigned char *id,
                     struct interface *ifp);
 

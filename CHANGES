@@ -1,3 +1,6 @@
+15. Spetember 2021: ToS-specific Routing
+* Implemented ToS-field as possiblity in Babel routing
+
 babeld-2.0 (unreleased)
 
   * Implemented MAC authentication (RFC 8967).  Thanks to Clara Dô,

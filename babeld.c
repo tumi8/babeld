@@ -105,7 +105,7 @@ kernel_route_notify(struct kernel_route *route, void *closure)
 }
 
 static int
-kernel_addr_notify(struct kernel_addr *addr, void *closure)
+kernel_addr_notify(struct kernel_addr *addr, void *closure, const unsigned char* tos)
 {
     kernel_addr_changed = 1;
     return -1;
@@ -562,7 +562,7 @@ main(int argc, char **argv)
         send_hello(ifp);
         send_wildcard_retraction(ifp);
         send_self_update(ifp);
-        send_multicast_request(ifp, NULL, 0, NULL, 0);
+        send_multicast_request(ifp, NULL, 0, NULL, 0, NULL);
         flushupdates(ifp);
         flushbuf(&ifp->buf, ifp);
     }
@@ -740,7 +740,7 @@ main(int argc, char **argv)
             if(timeval_compare(&now, &ifp->hello_timeout) >= 0)
                 send_hello(ifp);
             if(timeval_compare(&now, &ifp->update_timeout) >= 0)
-                send_update(ifp, 0, NULL, 0, NULL, 0);
+                send_update(ifp, 0, NULL, 0, NULL, 0, NULL);
             if(timeval_compare(&now, &ifp->update_flush_timeout) >= 0)
                 flushupdates(ifp);
         }
@@ -1054,10 +1054,11 @@ dump_route(FILE *out, struct babel_route *route)
         snprintf(channels + j, 100 - j, ")");
     }
 
-    fprintf(out, "%s from %s metric %d (%d) refmetric %d id %s "
+    fprintf(out, "%s from %s tos %s metric %d (%d) refmetric %d id %s "
             "seqno %d%s age %d via %s neigh %s%s%s%s\n",
             format_prefix(route->src->prefix, route->src->plen),
             format_prefix(route->src->src_prefix, route->src->src_plen),
+            format_tos_value(route->src->tos),
             route_metric(route), route_smoothed_metric(route), route->refmetric,
             format_eui64(route->src->id),
             (int)route->seqno,
@@ -1101,7 +1102,7 @@ dump_tables(FILE *out)
                 neighbour_rxcost(neigh),
                 neigh->txcost,
                 format_thousands(neigh->rtt),
-                neighbour_rttcost(neigh),
+                neighbour_rttcost(neigh, DSCP_DF), //Use default value here
                 neigh->ifp->channel,
                 if_up(neigh->ifp) ? "" : " (down)");
     }
