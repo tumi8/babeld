@@ -40,7 +40,7 @@ static int source_slots = 0, max_source_slots = 0;
 static int
 source_compare(const unsigned char *id,
                const unsigned char *prefix, unsigned char plen,
-               const unsigned char *src_prefix, unsigned char src_plen,
+               const unsigned char *src_prefix, unsigned char src_plen, const unsigned char *tos,
                const struct source *src)
 {
     int rc;
@@ -67,6 +67,10 @@ source_compare(const unsigned char *id,
     if(rc != 0)
         return rc;
 
+    rc = memcmp(tos, src->tos, 1);
+    if(rc != 0) // Decide based on the value if to search lower or higher when not fitting
+        return rc;
+
     return 0;
 }
 
@@ -74,6 +78,7 @@ static int
 find_source_slot(const unsigned char *id,
                  const unsigned char *prefix, unsigned char plen,
                  const unsigned char *src_prefix, unsigned char src_plen,
+                 const unsigned char *tos,
                  int *new_return)
 {
     int p, m, g, c;
@@ -88,7 +93,7 @@ find_source_slot(const unsigned char *id,
 
     do {
         m = (p + g) / 2;
-        c = source_compare(id, prefix, plen, src_prefix, src_plen, sources[m]);
+        c = source_compare(id, prefix, plen, src_prefix, src_plen, tos, sources[m]);
         if(c == 0)
             return m;
         else if(c < 0)
@@ -112,6 +117,7 @@ resize_source_table(int new_slots)
     if(new_slots == 0) {
         new_sources = NULL;
         free(sources);
+        return -1; // Added to make sure that submitting 0 new slots is an error what never should happen
     } else {
         new_sources = realloc(sources, new_slots * sizeof(struct source*));
         if(new_sources == NULL)
@@ -127,10 +133,12 @@ struct source*
 find_source(const unsigned char *id,
             const unsigned char *prefix, unsigned char plen,
             const unsigned char *src_prefix, unsigned char src_plen,
+            const unsigned char *tos,
             int create, unsigned short seqno)
 {
+    assert(tos); //Make sure we break the program when TOS is not set at this point
     int n = -1;
-    int i = find_source_slot(id, prefix, plen, src_prefix, src_plen, &n);
+    int i = find_source_slot(id, prefix, plen, src_prefix, src_plen, tos, &n);
     struct source *src;
 
     if(i >= 0)
@@ -150,6 +158,7 @@ find_source(const unsigned char *id,
     src->plen = plen;
     memcpy(src->src_prefix, src_prefix, 16);
     src->src_plen = src_plen;
+    memcpy(src->tos, tos, 1);
     src->seqno = seqno;
     src->metric = INFINITY;
     src->time = now.tv_sec;
@@ -240,9 +249,10 @@ check_sources_released(void)
         struct source *src = sources[i];
 
         if(src->route_count != 0)
-            fprintf(stderr, "Warning: source %s %s has refcount %d.\n",
+            fprintf(stderr, "Warning: source %s %s %s has refcount %d.\n",
                     format_eui64(src->id),
                     format_prefix(src->prefix, src->plen),
+                    format_tos_value(src->tos),
                     (int)src->route_count);
     }
 }

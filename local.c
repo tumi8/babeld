@@ -148,7 +148,7 @@ local_notify_neighbour_1(struct local_socket *s,
     rttbuf[0] = '\0';
     if(valid_rtt(neigh)) {
         rc = snprintf(rttbuf, 64, " rtt %s rttcost %u",
-                      format_thousands(neigh->rtt), neighbour_rttcost(neigh));
+                      format_thousands(neigh->rtt), neighbour_rttcost(neigh, DSCP_DF));
         if(rc < 0 || rc >= 64)
             rttbuf[0] = '\0';
     }
@@ -168,7 +168,7 @@ local_notify_neighbour_1(struct local_socket *s,
                   neighbour_rxcost(neigh),
                   neighbour_txcost(neigh),
                   rttbuf,
-                  neighbour_cost(neigh));
+                  neighbour_cost(neigh, NULL));
 
     if(rc < 0 || rc >= 512)
         goto fail;
@@ -202,9 +202,10 @@ local_notify_xroute_1(struct local_socket *s, struct xroute *xroute, int kind)
                                            xroute->plen);
     const char *src_prefix = format_prefix(xroute->src_prefix,
                                            xroute->src_plen);
+    const char *tos        = format_tos_value(xroute->tos);
 
-    rc = snprintf(buf, 512, "%s xroute %s-%s prefix %s from %s metric %d\n",
-                  local_kind(kind), dst_prefix, src_prefix,
+    rc = snprintf(buf, 512, "%s xroute %s-%s TOS %s prefix %s from %s metric %d\n",
+                  local_kind(kind), dst_prefix, src_prefix, tos,
                   dst_prefix, src_prefix, xroute->metric);
 
     if(rc < 0 || rc >= 512)
@@ -239,13 +240,14 @@ local_notify_route_1(struct local_socket *s, struct babel_route *route, int kind
                                            route->src->plen);
     const char *src_prefix = format_prefix(route->src->src_prefix,
                                            route->src->src_plen);
+    const char *tos       = format_tos_value(route->src->tos);
 
     rc = snprintf(buf, 512,
-                  "%s route %lx prefix %s from %s installed %s "
+                  "%s route %lx prefix %s from %s with TOS %s installed %s "
                   "id %s metric %d refmetric %d via %s if %s\n",
                   local_kind(kind),
                   (unsigned long)route,
-                  dst_prefix, src_prefix,
+                  dst_prefix, src_prefix, tos,
                   route->installed ? "yes" : "no",
                   format_eui64(route->src->id),
                   route_metric(route), route->refmetric,

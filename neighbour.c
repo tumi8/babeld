@@ -39,6 +39,7 @@ THE SOFTWARE.
 #include "message.h"
 #include "resend.h"
 #include "local.h"
+#include "configuration.h"
 
 struct neighbour *neighs = NULL;
 
@@ -312,30 +313,61 @@ neighbour_rxcost(struct neighbour *neigh)
 }
 
 unsigned
-neighbour_rttcost(struct neighbour *neigh)
+neighbour_rttcost(struct neighbour *neigh, const unsigned char *tos)
 {
     struct interface *ifp = neigh->ifp;
 
-    if(!ifp->max_rtt_penalty || !valid_rtt(neigh))
+    unsigned int rtt_min = ifp->rtt_min, rtt_max = ifp->rtt_max, max_rtt_penalty = ifp->max_rtt_penalty;
+
+    unsigned char tos_local; // Avoiding Error when TOS is not set, then we use the default class (DSCP DF)
+    if(is_default_tos(tos)){
+        tos_local = DSCP_DF;
+    }else{
+        tos_local = tos[0];
+    }
+
+    //Penalties can be changed here for different ToS-classes
+    if(!max_rtt_penalty || !valid_rtt(neigh) || tos_local == DSCP_CS1 || tos_local == DSCP_AF11 || tos_local == DSCP_AF12 || tos_local == DSCP_AF13)  // No penalty for RTT on high throughput
         return 0;
 
+    if( tos_local == DSCP_CS2 || tos_local == DSCP_AF21 || tos_local == DSCP_AF22 || tos_local == DSCP_AF23){ // low-latency causing higher penalty for rtt
+            max_rtt_penalty = 2 * max_rtt_penalty;
+            rtt_min = rtt_min/4;  // Higher penalty for RTT here
+            rtt_max = rtt_max/2;
+    }
+
+    if( tos_local == DSCP_CS3 || tos_local == DSCP_AF31 || tos_local == DSCP_AF32 || tos_local == DSCP_AF33){ //Videotraffic
+        rtt_min = rtt_min/2; //Lowering the minimal values here
+    }
+
+    if( tos_local == DSCP_CS4 || tos_local == DSCP_AF41 || tos_local == DSCP_AF42 || tos_local == DSCP_AF43){ //Real-Time Traffic (Same as low-latency but with higher normal penalty)
+        rtt_min = rtt_min/4;  // Higher penalty for RTT here
+        rtt_max = rtt_max/2;
+    }
+
+    if( tos_local == DSCP_CS5 || tos_local == DSCP_EF || tos_local == DSCP_CS6){ //Audiotraffic and network routing control
+        max_rtt_penalty = 2 * max_rtt_penalty;
+        rtt_min = rtt_min/2; //Lowering the minimal values here
+    }
+    // For DSCP_DF and DSCP_LE the default behavior is used
+
     /* Function: linear behaviour between rtt_min and rtt_max. */
-    if(neigh->rtt <= ifp->rtt_min) {
+    if(neigh->rtt <= rtt_min) {
         return 0;
-    } else if(neigh->rtt <= ifp->rtt_max) {
+    } else if(neigh->rtt <= rtt_max) {
         unsigned long long tmp =
-            (unsigned long long)ifp->max_rtt_penalty *
-            (neigh->rtt - ifp->rtt_min) /
-            (ifp->rtt_max - ifp->rtt_min);
+            (unsigned long long)max_rtt_penalty *
+            (neigh->rtt - rtt_min) /
+            (rtt_max - rtt_min);
         assert((tmp & 0x7FFFFFFF) == tmp);
         return tmp;
     } else {
-        return ifp->max_rtt_penalty;
+        return max_rtt_penalty;
     }
 }
 
 unsigned
-neighbour_cost(struct neighbour *neigh)
+neighbour_cost(struct neighbour *neigh, const unsigned char *tos)
 {
     unsigned a, b, cost;
 
@@ -344,14 +376,14 @@ neighbour_cost(struct neighbour *neigh)
 
     a = neighbour_txcost(neigh);
 
-    if(a >= INFINITY)
+    if (a >= INFINITY)
         return INFINITY;
 
     b = neighbour_rxcost(neigh);
-    if(b >= INFINITY)
+    if (b >= INFINITY)
         return INFINITY;
 
-    if(!(neigh->ifp->flags & IF_LQ) || (a < 256 && b < 256)) {
+    if (!(neigh->ifp->flags & IF_LQ) || (a < 256 && b < 256)) {
         cost = a;
     } else {
         /* a = 256/alpha, b = 256/beta, where alpha and beta are the expected
@@ -364,7 +396,7 @@ neighbour_cost(struct neighbour *neigh)
         cost = (a * b + 128) >> 8;
     }
 
-    cost += neighbour_rttcost(neigh);
+    cost += neighbour_rttcost(neigh, tos);
 
     return MIN(cost, INFINITY);
 }

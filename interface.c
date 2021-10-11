@@ -436,7 +436,7 @@ interface_updown(struct interface *ifp, int up)
             ifp->rtt_max = ifp->rtt_min + 10000;
         }
         ifp->max_rtt_penalty = IF_CONF(ifp, max_rtt_penalty);
-        if(ifp->max_rtt_penalty == 0 && type == IF_TYPE_TUNNEL)
+        if(ifp->max_rtt_penalty == 0) // && type == IF_TYPE_TUNNEL is removed to have a default penalty of 96 for every interface
             ifp->max_rtt_penalty = 96;
 
         if(IF_CONF(ifp, enable_timestamps) == CONFIG_YES)
@@ -446,7 +446,7 @@ interface_updown(struct interface *ifp, int up)
         else if(type == IF_TYPE_TUNNEL)
             ifp->flags |= IF_TIMESTAMPS;
         else
-            ifp->flags &= ~IF_TIMESTAMPS;
+            ifp->flags |= IF_TIMESTAMPS;  // Enable timestamps by default to calculate the max rtt for the penalty
         if(ifp->max_rtt_penalty > 0 && !(ifp->flags & IF_TIMESTAMPS))
             fprintf(stderr,
                     "Warning: max_rtt_penalty is set "
@@ -499,8 +499,8 @@ interface_updown(struct interface *ifp, int up)
         set_timeout(&ifp->update_timeout, ifp->update_interval);
         send_hello(ifp);
         if(rc > 0)
-            send_update(ifp, 0, NULL, 0, NULL, 0);
-        send_multicast_request(ifp, NULL, 0, NULL, 0);
+            send_update(ifp, 0, NULL, 0, NULL, 0, NULL);
+        send_multicast_request(ifp, NULL, 0, NULL, 0, NULL);
     } else {
         ifp->flags &= ~IF_UP;
         flush_interface_routes(ifp, 0);
@@ -587,8 +587,8 @@ check_interfaces(void)
             check_interface_channel(ifp);
             rc = check_interface_ipv4(ifp);
             if(rc > 0) {
-                send_multicast_request(ifp, NULL, 0, NULL, 0);
-                send_update(ifp, 0, NULL, 0, NULL, 0);
+                send_multicast_request(ifp, NULL, 0, NULL, 0, NULL);
+                send_update(ifp, 0, NULL, 0, NULL, 0, NULL);
             }
         }
     }

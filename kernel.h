@@ -30,6 +30,7 @@ struct kernel_route {
     int plen;
     unsigned char src_prefix[16];
     int src_plen;
+    unsigned char tos[1];
     int metric;
     unsigned int ifindex;
     int proto;
@@ -47,7 +48,7 @@ struct kernel_link {
 
 struct kernel_filter {
     /* return -1 to interrupt search. */
-    int (*addr)(struct kernel_addr *, void *);
+    int (*addr)(struct kernel_addr *, void *, const unsigned char *);
     void *addr_closure;
     int (*route)(struct kernel_route *, void *);
     void *route_closure;
@@ -84,6 +85,7 @@ int kernel_interface_channel(const char *ifname, int ifindex);
 int kernel_route(int operation, int table,
                  const unsigned char *dest, unsigned short plen,
                  const unsigned char *src, unsigned short src_plen,
+                 const unsigned char *tos,
                  const unsigned char *pref_src,
                  const unsigned char *gate, int ifindex, unsigned int metric,
                  const unsigned char *newgate, int newifindex,

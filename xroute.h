@@ -25,6 +25,7 @@ struct xroute {
     unsigned char plen;
     unsigned char src_prefix[16];
     unsigned char src_plen;
+    unsigned char tos[1];
     unsigned short metric;
     unsigned int ifindex;
     int proto;
@@ -33,9 +34,11 @@ struct xroute {
 struct xroute_stream;
 
 struct xroute *find_xroute(const unsigned char *prefix, unsigned char plen,
-                const unsigned char *src_prefix, unsigned char src_plen);
+                const unsigned char *src_prefix, unsigned char src_plen,
+                const unsigned char *tos);
 int add_xroute(unsigned char prefix[16], unsigned char plen,
                unsigned char src_prefix[16], unsigned char src_plen,
+               unsigned char tos[1],
                unsigned short metric, unsigned int ifindex, int proto);
 void flush_xroute(struct xroute *xroute);
 int xroutes_estimate(void);

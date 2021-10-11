@@ -76,6 +76,16 @@ the Babel network, just list them all:
 
     # babeld eth0 eth1 sit1
 
+We automatically distribute a certain number of ToS-values based on their DSCP Code:
+* DF
+* AF11
+* AF21
+* AF31
+* AF41
+* EF
+
+More can be added in the file configuration.c in the corresponding array and need to be added as number in configuration.h as well
+
 
 4. Setting up an Internet gateway
 ---------------------------------

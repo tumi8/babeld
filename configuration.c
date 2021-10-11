@@ -49,6 +49,15 @@ static struct filter *install_filters = NULL;
 struct interface_conf *default_interface_conf = NULL;
 static struct interface_conf *interface_confs = NULL;
 
+//Amount of directly redistributed values for ToS-based routing
+unsigned int dscp_values_len = 6;
+/**
+ * This list is used to assign the automatical redistributed values and the correct length needs to be set with dscp_values_len
+ */
+unsigned char dscp_distribute_local_list[6] = {DSCP_DF,DSCP_AF11,DSCP_AF21,DSCP_AF31,DSCP_AF41,DSCP_EF};
+unsigned char* dscp_values = dscp_distribute_local_list;// Exported list
+
+
 /* This indicates whether initial configuration is done.  See
    finalize_config below. */
 
@@ -362,8 +371,10 @@ free_filter(struct filter *f)
     free(f->id);
     free(f->prefix);
     free(f->src_prefix);
+    free(f->tos);
     free(f->neigh);
     free(f->action.src_prefix);
+    free(f->action.tos);
     free(f);
 }
 
@@ -513,6 +524,24 @@ parse_filter(int c, gnc_t gnc, void *closure, struct filter **filter_return)
                 filter->af = af;
             else if(filter->af != af)
                 goto error;
+        } else if(strcmp(token, "tos-value") == 0) {
+            int len;
+            c = gethex(c, &filter->tos, &len, gnc, closure);
+            if(c < -1){
+                goto error;
+            }
+            if(len != 1){
+                goto error;
+            }
+        } else if(strcmp(token, "tos") == 0) {
+            int len;
+            c = gethex(c, &filter->action.tos, &len, gnc, closure);
+            if(c < -1){
+                goto error;
+            }
+            if(len != 1){
+                goto error;
+            }
         } else {
             goto error;
         }
@@ -1380,6 +1409,7 @@ static int
 filter_match(struct filter *f, const unsigned char *id,
              const unsigned char *prefix, unsigned short plen,
              const unsigned char *src_prefix, unsigned short src_plen,
+             const unsigned char *tos,
              const unsigned char *neigh, unsigned int ifindex, int proto)
 {
     if(f->af) {
@@ -1402,6 +1432,10 @@ filter_match(struct filter *f, const unsigned char *id,
            !in_prefix(src_prefix, f->src_prefix, f->src_plen))
             return 0;
     }
+    if(f->tos) {
+        if(!tos || memcmp(f->tos, tos, 1) !=0)
+            return 0;
+    }
     if(f->plen_ge > 0 || f->plen_le < 128) {
         if(!prefix)
             return 0;
@@ -1418,6 +1452,7 @@ filter_match(struct filter *f, const unsigned char *id,
         if(src_plen < f->src_plen_ge)
             return 0;
     }
+
     if(f->neigh) {
         if(!neigh || memcmp(f->neigh, neigh, 16) != 0)
             return 0;
@@ -1446,6 +1481,7 @@ static int
 do_filter(struct filter *f, const unsigned char *id,
           const unsigned char *prefix, unsigned short plen,
           const unsigned char *src_prefix, unsigned short src_plen,
+          const unsigned char *tos,
           const unsigned char *neigh, unsigned int ifindex, int proto,
           struct filter_result *result)
 {
@@ -1453,7 +1489,8 @@ do_filter(struct filter *f, const unsigned char *id,
         memset(result, 0, sizeof(struct filter_result));
 
     while(f) {
-        if(filter_match(f, id, prefix, plen, src_prefix, src_plen,
+        //Only the first fitting filter will be moved forward (Preventing from multiple redistribute values for ToS)
+        if(filter_match(f, id, prefix, plen, src_prefix, src_plen, tos,
                         neigh, ifindex, proto)) {
             if(result)
                 memcpy(result, &f->action, sizeof(struct filter_result));
@@ -1469,11 +1506,12 @@ int
 input_filter(const unsigned char *id,
              const unsigned char *prefix, unsigned short plen,
              const unsigned char *src_prefix, unsigned short src_plen,
+             const unsigned char *tos,
              const unsigned char *neigh, unsigned int ifindex)
 {
     int res;
     res = do_filter(input_filters, id, prefix, plen,
-                    src_prefix, src_plen, neigh, ifindex, 0, NULL);
+                    src_prefix, src_plen, tos, neigh, ifindex, 0, NULL);
     if(res < 0)
         res = 0;
     return res;
@@ -1483,11 +1521,12 @@ int
 output_filter(const unsigned char *id,
               const unsigned char *prefix, unsigned short plen,
               const unsigned char *src_prefix, unsigned short src_plen,
+              const unsigned char *tos,
               unsigned int ifindex)
 {
     int res;
     res = do_filter(output_filters, id, prefix, plen,
-                    src_prefix, src_plen, NULL, ifindex, 0, NULL);
+                    src_prefix, src_plen, tos, NULL, ifindex, 0, NULL);
     if(res < 0)
         res = 0;
     return res;
@@ -1496,12 +1535,14 @@ output_filter(const unsigned char *id,
 int
 redistribute_filter(const unsigned char *prefix, unsigned short plen,
                     const unsigned char *src_prefix, unsigned short src_plen,
+                    const unsigned char *tos,
                     unsigned int ifindex, int proto,
                     struct filter_result *result)
 {
     int res;
     res = do_filter(redistribute_filters, NULL, prefix, plen,
-                    src_prefix, src_plen, NULL, ifindex, proto, result);
+                    src_prefix, src_plen, tos, NULL, ifindex, proto, result);
+
     if(res < 0)
         res = INFINITY;
     return res;
@@ -1510,12 +1551,13 @@ redistribute_filter(const unsigned char *prefix, unsigned short plen,
 int
 install_filter(const unsigned char *prefix, unsigned short plen,
                const unsigned char *src_prefix, unsigned short src_plen,
+               const unsigned char *tos,
                unsigned int ifindex,
                struct filter_result *result)
 {
     int res;
     res = do_filter(install_filters, NULL, prefix, plen,
-                    src_prefix, src_plen, NULL, ifindex, 0, result);
+                    src_prefix, src_plen, tos, NULL, ifindex, 0, result);
     if(res < 0)
         res = INFINITY;
     return res;
@@ -1528,7 +1570,7 @@ finalise_config()
     if(filter == NULL)
         return -1;
 
-    filter->proto = RTPROT_BABEL_LOCAL;
+    filter->proto = RTPROT_BABEL_LOCAL;  // Adds the filter to redistribute all locals automatically
     filter->plen_le = 128;
     filter->src_plen_le = 128;
     add_filter(filter, &redistribute_filters);

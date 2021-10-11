@@ -317,6 +317,14 @@ format_prefix(const unsigned char *prefix, unsigned char plen)
 }
 
 const char *
+format_tos_value(const unsigned char *tos)
+{
+    static char buf[3];
+    snprintf(buf, sizeof(char)*3, "%02x",tos[0]);
+    return buf;
+}
+
+const char *
 format_eui64(const unsigned char *eui)
 {
     static char buf[4][28];

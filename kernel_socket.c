@@ -400,6 +400,7 @@ kernel_route(int operation, int table,
              const unsigned char *dest, unsigned short plen,
              const unsigned char *src, unsigned short src_plen,
              const unsigned char *pref_src,
+             const unsigned char * tos,
              const unsigned char *gate, int ifindex, unsigned int metric,
              const unsigned char *newgate, int newifindex,
              unsigned int newmetric, int newtable)
@@ -419,6 +420,13 @@ kernel_route(int operation, int table,
     /* Source-specific routes & preferred source IPs
      * are not implemented yet for BSD. */
     if((!is_default(src, src_plen)) || pref_src) {
+        errno = ENOSYS;
+        return -1;
+    }
+
+    /* TOS-Specific routing
+     * is not implemented yet for BSD. */
+    if(!is_default_tos(tos)) {
         errno = ENOSYS;
         return -1;
     }
@@ -447,11 +455,11 @@ kernel_route(int operation, int table,
 
         /* Avoid atomic route changes that is buggy on OS X. */
         kernel_route(ROUTE_FLUSH, table, dest, plen,
-                     src, src_plen, NULL,
+                     src, src_plen, NULL, tos,
                      gate, ifindex, metric,
                      NULL, 0, 0, 0);
         return kernel_route(ROUTE_ADD, table, dest, plen,
-                            src, src_plen, NULL,
+                            src, src_plen, NULL, tos,
                             newgate, newifindex, newmetric,
                             NULL, 0, 0, 0);
 

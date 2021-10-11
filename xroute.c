@@ -46,6 +46,7 @@ static int numxroutes = 0, maxxroutes = 0;
 static int
 xroute_compare(const unsigned char *prefix, unsigned char plen,
                const unsigned char *src_prefix, unsigned char src_plen,
+               const unsigned char *tos,
                const struct xroute *xroute)
 {
     int rc;
@@ -68,12 +69,17 @@ xroute_compare(const unsigned char *prefix, unsigned char plen,
     if(rc != 0)
         return rc;
 
+    rc = memcmp(tos, xroute->tos, 1);
+    if(rc != 0)
+        return rc;
+
     return 0;
 }
 
 static int
 find_xroute_slot(const unsigned char *prefix, unsigned char plen,
                  const unsigned char *src_prefix, unsigned char src_plen,
+                 const unsigned char *tos,
                  int *new_return)
 {
     int p, m, g, c;
@@ -88,7 +94,7 @@ find_xroute_slot(const unsigned char *prefix, unsigned char plen,
 
     do {
         m = (p + g) / 2;
-        c = xroute_compare(prefix, plen, src_prefix, src_plen, &xroutes[m]);
+        c = xroute_compare(prefix, plen, src_prefix, src_plen, tos, &xroutes[m]);
         if(c == 0)
             return m;
         else if(c < 0)
@@ -106,9 +112,10 @@ find_xroute_slot(const unsigned char *prefix, unsigned char plen,
 
 struct xroute *
 find_xroute(const unsigned char *prefix, unsigned char plen,
-            const unsigned char *src_prefix, unsigned char src_plen)
+            const unsigned char *src_prefix, unsigned char src_plen,
+            const unsigned char *tos)
 {
-    int i = find_xroute_slot(prefix, plen, src_prefix, src_plen, NULL);
+    int i = find_xroute_slot(prefix, plen, src_prefix, src_plen, tos, NULL);
     if(i >= 0)
         return &xroutes[i];
 
@@ -118,10 +125,11 @@ find_xroute(const unsigned char *prefix, unsigned char plen,
 int
 add_xroute(unsigned char prefix[16], unsigned char plen,
            unsigned char src_prefix[16], unsigned char src_plen,
+           unsigned char tos[1],
            unsigned short metric, unsigned int ifindex, int proto)
 {
     int n = -1;
-    int i = find_xroute_slot(prefix, plen, src_prefix, src_plen, &n);
+    int i = find_xroute_slot(prefix, plen, src_prefix, src_plen, tos, &n);
 
     if(i >= 0)
         return -1;
@@ -145,6 +153,7 @@ add_xroute(unsigned char prefix[16], unsigned char plen,
     xroutes[n].plen = plen;
     memcpy(xroutes[n].src_prefix, src_prefix, 16);
     xroutes[n].src_plen = src_plen;
+    memcpy(xroutes[n].tos, tos, 1);
     xroutes[n].metric = metric;
     xroutes[n].ifindex = ifindex;
     xroutes[n].proto = proto;
@@ -249,14 +258,13 @@ kernel_routes(struct kernel_route *routes, int maxroutes)
     struct kernel_filter filter = {0};
     filter.route = filter_route;
     filter.route_closure = data;
-
     kernel_dump(CHANGE_ROUTE, &filter);
 
     return found;
 }
 
 static int
-filter_address(struct kernel_addr *addr, void *data) {
+filter_address(struct kernel_addr *addr, void *data, const unsigned char * tos) {
     void **args = (void **)data;
     int maxroutes = *(int *)args[0];
     struct kernel_route *routes = (struct kernel_route*)args[1];
@@ -284,6 +292,7 @@ filter_address(struct kernel_addr *addr, void *data) {
         route->src_plen = 96;
     }
     route->metric = 0;
+    memcpy(route->tos, tos, 1);
     route->ifindex = addr->ifindex;
     route->proto = RTPROT_BABEL_LOCAL;
     memset(route->gw, 0, 16);
@@ -335,6 +344,10 @@ kernel_route_compare(const void *v1, const void *v2)
     if(rc != 0)
         return rc;
 
+    rc = memcmp(route1->tos, route2->tos, 1);
+    if(rc != 0)
+        return rc;
+
     return 0;
 }
 
@@ -379,12 +392,16 @@ check_xroutes(int send_updates)
         routes[i].metric = redistribute_filter(routes[i].prefix, routes[i].plen,
                                                routes[i].src_prefix,
                                                routes[i].src_plen,
+                                               routes[i].tos,
                                                routes[i].ifindex,
                                                routes[i].proto,
                                                &filter_result);
         if(filter_result.src_prefix != NULL) {
             memcpy(routes[i].src_prefix, filter_result.src_prefix, 16);
             routes[i].src_plen = filter_result.src_plen;
+        }
+        if(filter_result.tos != NULL) {
+            memcpy(routes[i].tos, filter_result.tos, 1);
         }
     }
 
@@ -405,6 +422,7 @@ check_xroutes(int send_updates)
         else
             rc = xroute_compare(routes[i].prefix, routes[i].plen,
                                 routes[i].src_prefix, routes[i].src_plen,
+                                routes[i].tos,
                                 &xroutes[j]);
         if(rc < 0) {
             /* Add route i. */
@@ -412,6 +430,7 @@ check_xroutes(int send_updates)
                routes[i].metric < INFINITY) {
                 rc = add_xroute(routes[i].prefix, routes[i].plen,
                                 routes[i].src_prefix, routes[i].src_plen,
+                                routes[i].tos,
                                 routes[i].metric, routes[i].ifindex,
                                 routes[i].proto);
                 if(rc > 0) {
@@ -419,7 +438,8 @@ check_xroutes(int send_updates)
                     route = find_installed_route(routes[i].prefix,
                                                  routes[i].plen,
                                                  routes[i].src_prefix,
-                                                 routes[i].src_plen);
+                                                 routes[i].src_plen,
+                                                 routes[i].tos);
                     if(route) {
                         if(allow_duplicates < 0 ||
                            routes[i].metric < allow_duplicates)
@@ -427,7 +447,7 @@ check_xroutes(int send_updates)
                     }
                     if(send_updates)
                         send_update(NULL, 0, routes[i].prefix, routes[i].plen,
-                                    routes[i].src_prefix, routes[i].src_plen);
+                                    routes[i].src_prefix, routes[i].src_plen, routes[i].tos);
                     j++;
                 }
             }
@@ -436,19 +456,22 @@ check_xroutes(int send_updates)
             /* Flush xroute j. */
             unsigned char prefix[16], plen;
             unsigned char src_prefix[16], src_plen;
+            unsigned char tos[1];
             struct babel_route *route;
             memcpy(prefix, xroutes[i].prefix, 16);
             plen = xroutes[i].plen;
             memcpy(src_prefix, xroutes[i].src_prefix, 16);
             src_plen = xroutes[i].src_plen;
+            memcpy(tos, xroutes[i].tos, 1);
             flush_xroute(&xroutes[j]);
             route = find_best_route(prefix, plen, src_prefix, src_plen,
+                                    tos,
                                     1, NULL);
             if(route != NULL) {
                 install_route(route);
-                send_update(NULL, 0, prefix, plen, src_prefix, src_plen);
+                send_update(NULL, 0, prefix, plen, src_prefix, src_plen, tos);
             } else {
-                send_update_resend(NULL, prefix, plen, src_prefix, src_plen);
+                send_update_resend(NULL, prefix, plen, src_prefix, src_plen, tos);
             }
         } else {
             if(routes[i].metric != xroutes[j].metric ||
@@ -458,7 +481,7 @@ check_xroutes(int send_updates)
                 local_notify_xroute(&xroutes[j], LOCAL_CHANGE);
                 if(send_updates)
                     send_update(NULL, 0, xroutes[j].prefix, xroutes[j].plen,
-                                xroutes[j].src_prefix, xroutes[j].src_plen);
+                                xroutes[j].src_prefix, xroutes[j].src_plen, xroutes[j].tos);
             }
             i++;
             j++;

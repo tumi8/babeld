@@ -26,6 +26,7 @@ struct buffered_update {
     unsigned char src_prefix[16];
     unsigned char plen;
     unsigned char src_plen;
+    unsigned char tos[1];
     unsigned char pad[2];
 };
 

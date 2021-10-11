@@ -90,6 +90,7 @@ unsigned char *normalize_prefix(unsigned char *restrict ret,
                                 unsigned char plen);
 const char *format_address(const unsigned char *address);
 const char *format_prefix(const unsigned char *prefix, unsigned char plen);
+const char *format_tos_value(const unsigned char *tos);
 const char *format_eui64(const unsigned char *eui);
 const char *format_thousands(unsigned int value);
 int parse_address(const char *address, unsigned char *addr_r, int *af_r);
@@ -110,6 +111,12 @@ static inline int
 is_default(const unsigned char *prefix, int plen)
 {
     return plen == 0 || (plen == 96 && v4mapped(prefix));
+}
+
+static inline int
+is_default_tos(const unsigned char *tos)
+{
+    return tos == NULL || tos[0] == 0;
 }
 
 enum prefix_status {

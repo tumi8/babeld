@@ -41,12 +41,13 @@ struct resend *to_resend = NULL;
 static int
 resend_match(struct resend *resend,
              int kind, const unsigned char *prefix, unsigned char plen,
-             const unsigned char *src_prefix, unsigned char src_plen)
+             const unsigned char *src_prefix, unsigned char src_plen, const unsigned char *tos)
 {
     return (resend->kind == kind &&
             resend->plen == plen && memcmp(resend->prefix, prefix, 16) == 0 &&
             resend->src_plen == src_plen &&
-            memcmp(resend->src_prefix, src_prefix, 16) == 0);
+            memcmp(resend->src_prefix, src_prefix, 16) == 0 &&
+            memcmp(resend->tos, tos, 1) == 0);
 }
 
 /* This is called by neigh.c when a neighbour is flushed */
@@ -60,6 +61,7 @@ flush_resends(struct neighbour *neigh)
 static struct resend *
 find_resend(int kind, const unsigned char *prefix, unsigned char plen,
             const unsigned char *src_prefix, unsigned char src_plen,
+            const unsigned char *tos,
             struct resend **previous_return)
 {
     struct resend *current, *previous;
@@ -67,7 +69,7 @@ find_resend(int kind, const unsigned char *prefix, unsigned char plen,
     previous = NULL;
     current = to_resend;
     while(current) {
-        if(resend_match(current, kind, prefix, plen, src_prefix, src_plen)) {
+        if(resend_match(current, kind, prefix, plen, src_prefix, src_plen, tos)) {
             if(previous_return)
                 *previous_return = previous;
             return current;
@@ -82,15 +84,17 @@ find_resend(int kind, const unsigned char *prefix, unsigned char plen,
 struct resend *
 find_request(const unsigned char *prefix, unsigned char plen,
              const unsigned char *src_prefix, unsigned char src_plen,
+             const unsigned char *tos,
              struct resend **previous_return)
 {
-    return find_resend(RESEND_REQUEST, prefix, plen, src_prefix, src_plen,
+    return find_resend(RESEND_REQUEST, prefix, plen, src_prefix, src_plen, tos,
                        previous_return);
 }
 
 int
 record_resend(int kind, const unsigned char *prefix, unsigned char plen,
               const unsigned char *src_prefix, unsigned char src_plen,
+              const unsigned char *tos,
               unsigned short seqno, const unsigned char *id,
               struct interface *ifp, int delay)
 {
@@ -98,18 +102,18 @@ record_resend(int kind, const unsigned char *prefix, unsigned char plen,
     unsigned int ifindex = ifp ? ifp->ifindex : 0;
 
     if((kind == RESEND_REQUEST &&
-        input_filter(NULL, prefix, plen, src_prefix, src_plen, NULL,
+        input_filter(NULL, prefix, plen, src_prefix, src_plen, tos, NULL,
                      ifindex) >=
         INFINITY) ||
        (kind == RESEND_UPDATE &&
-        output_filter(NULL, prefix, plen, src_prefix, src_plen, ifindex) >=
+        output_filter(NULL, prefix, plen, src_prefix, src_plen, tos, ifindex) >=
         INFINITY))
         return 0;
 
     if(delay >= 0xFFFF)
         delay = 0xFFFF;
 
-    resend = find_resend(kind, prefix, plen, src_prefix, src_plen, NULL);
+    resend = find_resend(kind, prefix, plen, src_prefix, src_plen, tos,NULL);
     if(resend) {
         if(resend->delay && delay)
             resend->delay = MIN(resend->delay, delay);
@@ -139,6 +143,7 @@ record_resend(int kind, const unsigned char *prefix, unsigned char plen,
         resend->plen = plen;
         memcpy(resend->src_prefix, src_prefix, 16);
         resend->src_plen = src_plen;
+        memcpy(resend->tos, tos, 1);
         resend->seqno = seqno;
         if(id)
             memcpy(resend->id, id, 8);
@@ -170,11 +175,12 @@ resend_expired(struct resend *resend)
 int
 unsatisfied_request(const unsigned char *prefix, unsigned char plen,
                     const unsigned char *src_prefix, unsigned char src_plen,
+                    const unsigned char *tos,
                     unsigned short seqno, const unsigned char *id)
 {
     struct resend *request;
 
-    request = find_request(prefix, plen, src_prefix, src_plen, NULL);
+    request = find_request(prefix, plen, src_prefix, src_plen, tos, NULL);
     if(request == NULL || resend_expired(request))
         return 0;
 
@@ -190,11 +196,12 @@ int
 request_redundant(struct interface *ifp,
                   const unsigned char *prefix, unsigned char plen,
                   const unsigned char *src_prefix, unsigned char src_plen,
+                  const unsigned char *tos,
                   unsigned short seqno, const unsigned char *id)
 {
     struct resend *request;
 
-    request = find_request(prefix, plen, src_prefix, src_plen, NULL);
+    request = find_request(prefix, plen, src_prefix, src_plen, tos, NULL);
     if(request == NULL || resend_expired(request))
         return 0;
 
@@ -220,12 +227,13 @@ request_redundant(struct interface *ifp,
 int
 satisfy_request(const unsigned char *prefix, unsigned char plen,
                 const unsigned char *src_prefix, unsigned char src_plen,
+                const unsigned char *tos,
                 unsigned short seqno, const unsigned char *id,
                 struct interface *ifp)
 {
     struct resend *request, *previous;
 
-    request = find_request(prefix, plen, src_prefix, src_plen, &previous);
+    request = find_request(prefix, plen, src_prefix, src_plen, tos, &previous);
     if(request == NULL)
         return 0;
 
@@ -310,13 +318,14 @@ do_resend()
                                                     resend->prefix, resend->plen,
                                                     resend->src_prefix,
                                                     resend->src_plen,
+                                                    resend->tos,
                                                     resend->seqno, resend->id,
                                                     127);
                     break;
                 case RESEND_UPDATE:
                     send_update(resend->ifp, 1,
                                 resend->prefix, resend->plen,
-                                resend->src_prefix, resend->src_plen);
+                                resend->src_prefix, resend->src_plen, resend->tos);
                     break;
                 default: abort();
                 }

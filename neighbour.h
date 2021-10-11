@@ -71,6 +71,6 @@ int update_neighbour(struct neighbour *neigh, struct hello_history *hist,
 unsigned check_neighbours(void);
 unsigned neighbour_txcost(struct neighbour *neigh);
 unsigned neighbour_rxcost(struct neighbour *neigh);
-unsigned neighbour_rttcost(struct neighbour *neigh);
-unsigned neighbour_cost(struct neighbour *neigh);
+unsigned neighbour_rttcost(struct neighbour *neigh, const unsigned char *tos);
+unsigned neighbour_cost(struct neighbour *neigh, const unsigned char *tos);
 int valid_rtt(struct neighbour *neigh);
