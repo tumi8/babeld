@@ -1,5 +1,7 @@
-15. Spetember 2021: ToS-specific Routing
-* Implemented ToS-field as possiblity in Babel routing
+30 November 2021: ToS-specific Routing
+   * Implemented ToS-field as possiblity in Babel routing
+   * Automatically distribute ToS-specific routing
+   * Added policies into the cost-function for ToS
 
 babeld-2.0 (unreleased)
 
