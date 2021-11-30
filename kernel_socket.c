@@ -2,6 +2,7 @@
 Copyright (c) 2007 by Grégoire Henry
 Copyright (c) 2008, 2009 by Juliusz Chroboczek
 Copyright (c) 2010 by Vincent Gross
+Copyright (c) 2021 by Florian Wiedner
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
